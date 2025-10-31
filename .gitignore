@@ -5,5 +5,4 @@ node_modules
 /generated/prisma
 config/serviceAccountKey.json
 config/taxibe-743c6-firebase-adminsdk-fbsvc-1b27b96276.json
-package.json
-package-lock.json
+
