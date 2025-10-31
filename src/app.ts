@@ -42,7 +42,7 @@ const swaggerOptions = {
       description: "Documentation de l'API TaxiBe",
     },
     servers: [
-      { url: "http://localhost:3000/api" },
+      { url: "https://fandaniana.onrender.com/api" },
     ],
     // Ajoutez la configuration de security
     components: {
