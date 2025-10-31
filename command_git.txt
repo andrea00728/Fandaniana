@@ -1,0 +1,14 @@
+
+command ampesaina refa aka mis a jour vao2
+- git fetch origin 
+- git pull origin main 
+
+
+command ampesaina refa andefa mis a jour ()
+
+-git fetch origin 
+-git pull origin main
+-git add .
+-git commit -m "izay modification natao"
+-git push origin isaia
+

@@ -1,0 +1,1 @@
+{"version":3,"file":"wallet.dto.d.ts","sourceRoot":"","sources":["../../src/dtos/wallet.dto.ts"],"names":[],"mappings":"AAAA,qBAAa,WAAW;IACtB,OAAO,EAAG,MAAM,CAAC;CAClB;AAED,qBAAa,eAAe;IAC1B,GAAG,CAAC,EAAE,MAAM,CAAC;IACb,aAAa,CAAC,EAAE,MAAM,CAAC;CACxB"}

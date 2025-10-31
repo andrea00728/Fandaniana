@@ -1,0 +1,41 @@
+[
+  {
+    "id": 6,
+    "nom": "Ivory Avaratra",
+    "latitude": "-21.451507",
+    "longitude": "47.096942",
+    "ligne": {
+      "id": 2,
+      "nom": "Bus 48",
+      "tarif": "500",
+      "depart": "Université d'Andrainjato",
+      "terminus": "Anjoma"
+    }
+  },
+  {
+    "id": 8,
+    "nom": "Marche Anjoma",
+    "latitude": "-21.454440",
+    "longitude": "47.087500",
+    "ligne": {
+      "id": 2,
+      "nom": "Bus 48",
+      "tarif": "500",
+      "depart": "Université d'Andrainjato",
+      "terminus": "Anjoma"
+    }
+  },
+  {
+    "id": 7,
+    "nom": "stade Ampazambazaha",
+    "latitude": "-21.448190",
+    "longitude": "47.086790",
+    "ligne": {
+      "id": 2,
+      "nom": "Bus 48",
+      "tarif": "500",
+      "depart": "Université d'Andrainjato",
+      "terminus": "Anjoma"
+    }
+  }
+]

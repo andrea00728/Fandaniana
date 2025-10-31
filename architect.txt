@@ -1,0 +1,16 @@
+src/
+│
+├── app.ts                      # Point d’entrée Express
+├── data-source.ts              # Configuration TypeORM
+│
+├── modules/
+│   └── user/                   # Exemple de module "user"
+│       ├── user.entity.ts      # Entité TypeORM
+│       ├── user.dto.ts         # DTO (validation)
+│       ├── user.service.ts     # Logique métier
+│       ├── user.controller.ts  # Routes / contrôleur
+│       └── user.module.ts      # Point d’entrée du module
+│
+├── shared/                     # (optionnel) middlewares, utils, constantes
+│
+└── config/                     # Fichiers de configuration (.env, etc.)

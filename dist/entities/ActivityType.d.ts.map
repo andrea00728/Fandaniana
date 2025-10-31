@@ -1,0 +1,1 @@
+{"version":3,"file":"ActivityType.d.ts","sourceRoot":"","sources":["../../src/entities/ActivityType.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,WAAW,EAAE,MAAM,eAAe,CAAC;AAE5C,qBACa,YAAY;IAEvB,EAAE,EAAG,MAAM,CAAC;IAGZ,GAAG,EAAG,MAAM,CAAC;IAGb,WAAW,EAAG,MAAM,GAAC,SAAS,CAAC;IAG/B,IAAI,EAAG,MAAM,GAAC,SAAS,CAAC;IAGxB,YAAY,EAAG,WAAW,EAAE,CAAC;CAC9B"}
