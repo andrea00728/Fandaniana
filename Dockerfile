@@ -2,13 +2,13 @@ FROM node:18.20.1-alpine
 
 WORKDIR /app
 
-# Copier package.json depuis le répertoire backend
-COPY backend/package*.json ./
+# Copier package.json et package-lock.json (si présent)
+COPY package*.json ./
 
 RUN npm install
 
-# Copier tous les fichiers du backend
-COPY backend .
+# Copier tous les fichiers du projet
+COPY . .
 
 RUN npm run build
 
