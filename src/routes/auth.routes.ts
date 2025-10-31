@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import admin from "firebase-admin";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import nodemailer, { Transporter } from "nodemailer";
+import sgMail from "@sendgrid/mail";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { AppDataSource } from "../config/data-source";
 import { Wallet } from "../entities/wallet";
@@ -27,66 +27,47 @@ if (!admin.apps.length) {
   });
 }
 
-
 // ============================================================================
-// NODEMAILER CONFIGURATION - GMAIL SMTP
+// SENDGRID CONFIGURATION
 // ============================================================================
-const transporter: Transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 30000,
-  socketTimeout: 30000,
-  greetingTimeout: 30000,
-});
+sgMail.setApiKey(process.env.SENDGRID_API_KEY || "");
 
-// Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ SMTP Connection Error:', error.message);
-  } else {
-    console.log('✅ SMTP Connected Successfully');
-  }
-});
-
-
-// Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ SMTP Connection Error:', error.message);
-  } else {
-    console.log('✅ SMTP Connected Successfully');
-  }
-});
+if (!process.env.SENDGRID_API_KEY) {
+  console.error('❌ SENDGRID_API_KEY not configured!');
+} else {
+  console.log('✅ SendGrid configured successfully');
+}
 
 // ============================================================================
 // EMAIL SENDING WITH RETRY LOGIC
 // ============================================================================
 async function sendEmailWithRetry(
-  mailOptions: any,
+  to: string,
+  subject: string,
+  html: string,
   retries: number = 3
 ): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
-      await transporter.sendMail(mailOptions);
-      console.log('✅ Email sent successfully');
+      await sgMail.send({
+        to,
+        from: process.env.SENDGRID_FROM_EMAIL || "andrea112samuel@gmail.com",
+        subject,
+        html,
+      });
+      console.log(' Email sent successfully via SendGrid');
       return;
     } catch (error: any) {
       console.error(
-        `❌ Attempt ${i + 1}/${retries} failed:`,
-        error.message,
-        `(${error.code})`
+        ` Attempt ${i + 1}/${retries} failed:`,
+        error.message
       );
 
       if (i < retries - 1) {
-        // Exponential backoff: 1s, 2s, 4s
         const delay = 1000 * Math.pow(2, i);
         console.log(`⏳ Retrying in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
-        // Last attempt failed
         throw new Error(`Email send failed after ${retries} attempts: ${error.message}`);
       }
     }
@@ -118,14 +99,14 @@ function generateOtp(len: number = 6): string {
  * @swagger
  * tags:
  *   name: Auth
- *   description: User authentication via OTP email
+ *   description: Authentification utilisateurs via OTP email
  */
 
 /**
  * @swagger
  * /auth/send-confirmation:
  *   post:
- *     summary: Send confirmation code by email to create a user account
+ *     summary: Envoie un code de confirmation par email pour créer un utilisateur (email + rôle)
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -147,25 +128,34 @@ function generateOtp(len: number = 6): string {
  *                 example: user
  *     responses:
  *       200:
- *         description: Code sent successfully
+ *         description: Code envoyé avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 step:
+ *                   type: string
  *       400:
- *         description: Invalid email/role or email already exists
+ *         description: Email ou rôle invalide / email déjà utilisé
  *       500:
- *         description: Email sending failed after retries
+ *         description: Erreur d'envoi d'email
  */
 AuthRouter.post('/send-confirmation', async (req: Request, res: Response) => {
   const { email, role } = req.body;
   const validRoles = ['user', 'admin'];
 
   if (!email || !role || !validRoles.includes(role)) {
-    return res.status(400).json({ error: 'Email or role invalid' });
+    return res.status(400).json({ error: 'Email ou rôle invalide' });
   }
 
   try {
     await admin.auth().getUserByEmail(email);
-    return res.status(400).json({ error: "Email already exists" });
+    return res.status(400).json({ error: "Email déjà utilisé" });
   } catch {
-    // User not found, OK to proceed
+    // Utilisateur non trouvé, ok pour générer code
   }
 
   const code = generateOtp(6);
@@ -177,28 +167,34 @@ AuthRouter.post('/send-confirmation', async (req: Request, res: Response) => {
   });
 
   try {
-    await sendEmailWithRetry({
-      from: `"Support Fandaniana" <${process.env.SMTP_USER}>`,
-      to: email,
-      subject: "Votre code de confirmation",
-      html: `
+    await sendEmailWithRetry(
+      email,
+      "Votre code de confirmation",
+      `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
-          <h2 style="color: #FCB53B;">Code de confirmation</h2>
-          <p>Votre code de confirmation (valide 5 minutes):</p>
-          <h1 style="color: #FCB53B; letter-spacing: 5px; text-align: center;">${code}</h1>
-          <p style="color: #666; font-size: 14px;">Ne partagez ce code avec personne.</p>
+          <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0;">Fandaniana</h1>
+          </div>
+          <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333;">Code de confirmation</h2>
+            <p style="color: #666; font-size: 16px;">Votre code de confirmation (valide 5 minutes):</p>
+            <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+              <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
+            </div>
+            <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne. Notre équipe ne vous le demandera jamais.</p>
+          </div>
         </div>
-      `,
-    });
+      `
+    );
 
     res.json({
-      message: "Code sent, please confirm",
+      message: "Code envoyé, veuillez confirmer",
       step: "CONFIRM_EMAIL",
     });
   } catch (emailError: any) {
-    console.error("❌ Email sending failed:", emailError.message);
+    console.error("❌ Erreur d'envoi d'email:", emailError.message);
     res.status(500).json({
-      error: "Email sending failed. Please try again in a few moments.",
+      error: "Erreur d'envoi d'email. Veuillez réessayer.",
       details: emailError.message,
     });
   }
@@ -212,7 +208,7 @@ AuthRouter.post('/send-confirmation', async (req: Request, res: Response) => {
  * @swagger
  * /auth/login:
  *   post:
- *     summary: Verify email and send OTP code
+ *     summary: Vérification email, envoi OTP
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -228,17 +224,17 @@ AuthRouter.post('/send-confirmation', async (req: Request, res: Response) => {
  *                 example: user@example.com
  *     responses:
  *       200:
- *         description: Code sent
+ *         description: Code envoyé
  *       400:
- *         description: User not found or email error
+ *         description: Erreur d'email
  *       500:
- *         description: Email sending failed
+ *         description: Erreur d'envoi d'email
  */
 AuthRouter.post("/login", async (req: Request, res: Response) => {
   const { email } = req.body;
 
   if (!email) {
-    return res.status(400).json({ error: "Email required" });
+    return res.status(400).json({ error: "Email manquant" });
   }
 
   try {
@@ -253,13 +249,12 @@ AuthRouter.post("/login", async (req: Request, res: Response) => {
     });
 
     try {
-      await sendEmailWithRetry({
-        from: `"Support Fandaniana" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject: "Votre code de vérification Fandaniana",
-        html: `
+      await sendEmailWithRetry(
+        email,
+        "Votre code de vérification Fandaniana",
+        `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
-            <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0;">
+            <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
               <h1 style="color: white; margin: 0;">Fandaniana</h1>
             </div>
             <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
@@ -268,28 +263,28 @@ AuthRouter.post("/login", async (req: Request, res: Response) => {
               <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
                 <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
               </div>
-              <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne. Notre équipe ne vous le demandera jamais.</p>
+              <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne.</p>
             </div>
           </div>
-        `,
-      });
+        `
+      );
 
       return res.json({
-        message: "Code sent by email",
+        message: "Code envoyé par email",
         step: "VERIFY_OTP",
         uid: user.uid,
       });
     } catch (emailError: any) {
-      console.error("❌ Email sending error:", emailError.message);
+      console.error("❌ Erreur d'envoi d'email:", emailError.message);
       return res.status(500).json({
-        error: "Email sending failed. Please try again.",
+        error: "Erreur d'envoi d'email. Veuillez réessayer.",
         code: emailError.code,
       });
     }
   } catch (error: any) {
-    console.error("❌ Login error:", error.message);
+    console.error("❌ Erreur login:", error.message);
     return res.status(400).json({
-      error: "User not found or email error",
+      error: "Utilisateur introuvable ou erreur d'envoi",
       code: error.code,
     });
   }
@@ -303,7 +298,7 @@ AuthRouter.post("/login", async (req: Request, res: Response) => {
  * @swagger
  * /auth/verify-otp:
  *   post:
- *     summary: Verify OTP code and return JWT token
+ *     summary: Vérifie le code OTP reçu par email, délivre un JWT si correct
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -320,41 +315,41 @@ AuthRouter.post("/login", async (req: Request, res: Response) => {
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Successful login (token)
+ *         description: Connexion réussie (token)
  *       400:
- *         description: Invalid or expired code
+ *         description: Code invalide ou expiré
  *       429:
- *         description: Too many attempts
+ *         description: Trop de tentatives
  */
 AuthRouter.post("/verify-otp", async (req: Request, res: Response) => {
   const { email, code } = req.body;
 
   if (!email || !code) {
-    return res.status(400).json({ error: "Email and code required" });
+    return res.status(400).json({ error: "Email et code requis" });
   }
 
   const record = pendingOtps.get(email);
 
   if (!record) {
-    return res.status(400).json({ error: "No OTP pending for this email" });
+    return res.status(400).json({ error: "Aucun OTP en attente" });
   }
 
   if (record.attempts >= 5) {
     pendingOtps.delete(email);
     return res.status(429).json({
-      error: "Too many attempts, request a new code",
+      error: "Trop de tentatives, redemandez un code",
     });
   }
 
   if (Date.now() > record.expiresAt) {
     pendingOtps.delete(email);
-    return res.status(400).json({ error: "Code expired, request a new one" });
+    return res.status(400).json({ error: "Code expiré, redemandez un code" });
   }
 
   record.attempts += 1;
 
   if (code !== record.code) {
-    return res.status(400).json({ error: "Invalid code" });
+    return res.status(400).json({ error: "Code invalide" });
   }
 
   pendingOtps.delete(email);
@@ -368,8 +363,8 @@ AuthRouter.post("/verify-otp", async (req: Request, res: Response) => {
 
     return res.json({ token, role });
   } catch (error: any) {
-    console.error("❌ Verify OTP error:", error.message);
-    return res.status(400).json({ error: "User not found" });
+    console.error("❌ Erreur verify OTP:", error.message);
+    return res.status(400).json({ error: "Utilisateur introuvable" });
   }
 });
 
@@ -381,7 +376,7 @@ AuthRouter.post("/verify-otp", async (req: Request, res: Response) => {
  * @swagger
  * /auth/resend-otp:
  *   post:
- *     summary: Resend OTP code to email
+ *     summary: Renvoyer un nouveau code OTP à l'email si délai/expiration
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -396,20 +391,19 @@ AuthRouter.post("/verify-otp", async (req: Request, res: Response) => {
  *                 format: email
  *     responses:
  *       200:
- *         description: New code sent
+ *         description: Nouveau code envoyé
  *       400:
- *         description: User not found
+ *         description: Utilisateur introuvable
  *       429:
- *         description: Rate limit exceeded (max 3 resends per 5 minutes)
+ *         description: Rate limit atteint
  *       500:
- *         description: Email sending failed
+ *         description: Erreur d'envoi d'email
  */
 const resendLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) =>
-    req.body.email || ipKeyGenerator(req as any),
-  message: "Too many resend attempts, please try again later",
+  keyGenerator: (req) => req.body.email || ipKeyGenerator(req as any),
+  message: "Trop de tentatives, veuillez réessayer plus tard",
 });
 
 AuthRouter.post(
@@ -419,7 +413,7 @@ AuthRouter.post(
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: "Email required" });
+      return res.status(400).json({ error: "Email manquant" });
     }
 
     try {
@@ -434,32 +428,37 @@ AuthRouter.post(
       });
 
       try {
-        await sendEmailWithRetry({
-          from: `"Support Fandaniana" <${process.env.SMTP_USER}>`,
-          to: email,
-          subject: "Nouveau code de vérification",
-          html: `
+        await sendEmailWithRetry(
+          email,
+          "Nouveau code de vérification",
+          `
             <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
-              <h2 style="color: #FCB53B;">Nouveau code de vérification</h2>
-              <p>Voici votre nouveau code (valide 5 minutes):</p>
-              <h1 style="color: #FCB53B; letter-spacing: 5px; text-align: center;">${code}</h1>
-              <p style="color: #666; font-size: 14px;">Ne partagez ce code avec personne.</p>
+              <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0;">Fandaniana</h1>
+              </div>
+              <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+                <h2 style="color: #333;">Nouveau code de vérification</h2>
+                <p style="color: #666; font-size: 16px;">Voici votre nouveau code (valide 5 minutes):</p>
+                <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+                  <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
+                </div>
+                <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne.</p>
+              </div>
             </div>
-          `,
-        });
+          `
+        );
 
-        return res.json({ message: "New code sent" });
+        return res.json({ message: "Nouveau code envoyé" });
       } catch (emailError: any) {
-        console.error("❌ Email sending error:", emailError.message);
+        console.error("❌ Erreur d'envoi d'email:", emailError.message);
         return res.status(500).json({
-          error: "Email sending failed. Please try again.",
-          code: emailError.code,
+          error: "Erreur d'envoi d'email. Veuillez réessayer.",
         });
       }
     } catch (error: any) {
-      console.error("❌ Resend OTP error:", error.message);
+      console.error("❌ Erreur resend OTP:", error.message);
       return res.status(400).json({
-        error: "User not found",
+        error: "Utilisateur introuvable",
         code: error.code,
       });
     }
@@ -474,7 +473,7 @@ AuthRouter.post(
  * @swagger
  * /auth/confirm:
  *   post:
- *     summary: Confirm OTP, create (or retrieve) user and wallet (idempotent)
+ *     summary: Confirme le code OTP, crée (ou récupère) l'utilisateur et son wallet (idempotent)
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -493,80 +492,80 @@ AuthRouter.post(
  *                 type: string
  *     responses:
  *       200:
- *         description: Account and wallet ready
+ *         description: Compte et wallet prêts à l'emploi
  *       400:
- *         description: Invalid, expired code or validation error
+ *         description: Code invalide, expiré ou validation error
  *       500:
- *         description: Firebase or database error
+ *         description: Firebase ou database error
  */
 AuthRouter.post("/confirm", async (req: Request, res: Response) => {
   const { email, code } = req.body;
 
   console.log("===========================================");
-  console.log("📥 CONFIRM - Request started");
+  console.log("📥 CONFIRM - Début de la requête");
   console.log("Email:", email);
-  console.log("Code received:", code);
+  console.log("Code reçu:", code);
   console.log("===========================================");
 
   // 0) Validation
   if (!email || !code) {
-    return res.status(400).json({ error: "Email and code required" });
+    return res.status(400).json({ error: "Email et code requis" });
   }
 
   const otpData = pendingOtps.get(email);
 
   if (!otpData) {
-    return res.status(400).json({ error: "No OTP pending for this email" });
+    return res.status(400).json({ error: "Aucun code en attente pour cet email" });
   }
 
   if (Date.now() > otpData.expiresAt) {
     pendingOtps.delete(email);
-    return res.status(400).json({ error: "Code expired" });
+    return res.status(400).json({ error: "Code expiré" });
   }
 
   if (otpData.code !== code) {
-    return res.status(400).json({ error: "Invalid code" });
+    return res.status(400).json({ error: "Code incorrect" });
   }
 
-  console.log("✅ OTP validated");
+  console.log("✅ OTP validé");
 
   try {
-    // 1) Get or create Firebase user (idempotent)
+    // 1) Récupérer ou créer l'utilisateur Firebase (idempotent)
     let userRecord;
     try {
       userRecord = await admin.auth().getUserByEmail(email);
-      console.log("ℹ️ User already exists:", userRecord.uid);
+      console.log("ℹ️ Utilisateur déjà existant:", userRecord.uid);
     } catch (e: any) {
       if (e.code === "auth/user-not-found") {
         userRecord = await admin.auth().createUser({
           email,
           emailVerified: false,
         });
-        console.log("✅ User created:", userRecord.uid);
+        console.log("✅ Utilisateur créé:", userRecord.uid);
       } else {
         throw e;
       }
     }
 
-    // 2) Set/update custom claims (role)
+    // 2) Définir/mettre à jour les custom claims (rôle)
     try {
       await admin.auth().setCustomUserClaims(userRecord.uid, {
         role: otpData.role || "user",
       });
-      console.log("✅ Role set/updated:", otpData.role || "user");
+      console.log("✅ Rôle défini/mis à jour:", otpData.role || "user");
     } catch (roleError: any) {
-      console.error("❌ setCustomUserClaims error:", roleError);
+      console.error("❌ Erreur setCustomUserClaims:", roleError);
       throw roleError;
     }
 
-    // 3) Check DB state
+    // 3) Vérifier l'état de la DB
     if (!AppDataSource.isInitialized) {
-      console.log("⚠️ AppDataSource not initialized, initializing...");
+      console.log("⚠️ AppDataSource non initialisé, initialisation...");
       await AppDataSource.initialize();
-      console.log("✅ AppDataSource initialized");
+      console.log("✅ AppDataSource initialisé");
     }
 
-    // 4) Create wallet if it doesn't exist (idempotent)
+    // 4) Créer le wallet s'il n'existe pas (idempotent)
     const walletRepo = AppDataSource.getRepository(Wallet);
     let wallet = await walletRepo.findOne({
       where: { firebase_uid: userRecord.uid },
@@ -581,64 +580,64 @@ AuthRouter.post("/confirm", async (req: Request, res: Response) => {
         solde_total: 0,
       });
       await walletRepo.save(wallet);
-      console.log("✅ Wallet created:", wallet.id);
+      console.log("✅ Wallet créé:", wallet.id);
     } else {
-      console.log("ℹ️ Wallet already exists:", wallet.id);
+      console.log("ℹ️ Wallet déjà existant:", wallet.id);
     }
 
-    // 5) Clean up OTP in memory
+    // 5) Nettoyer l'OTP en mémoire
     pendingOtps.delete(email);
 
     return res.status(200).json({
-      message: "Account and wallet ready",
+      message: "Compte et portefeuille prêts",
       uid: userRecord.uid,
       wallet_id: wallet.id,
     });
   } catch (error: any) {
-    console.error("❌ CONFIRM ERROR:", {
+    console.error("❌ ERREUR confirm:", {
       name: error?.name,
       code: error?.code,
       message: error?.message,
     });
 
-    // Firebase error mapping
+    // Mappage d'erreurs Firebase
     if (error.code === "auth/invalid-email") {
       return res.status(400).json({
-        error: "Invalid email address",
+        error: "Adresse email invalide",
         code: error.code,
       });
     }
     if (error.code === "auth/insufficient-permission") {
       return res.status(500).json({
-        error: "Firebase insufficient permissions",
+        error: "Permissions Firebase insuffisantes",
         code: error.code,
       });
     }
     if (error.code === "auth/email-already-exists") {
       return res.status(400).json({
-        error: "Email already used",
+        error: "Email déjà utilisé",
         code: error.code,
       });
     }
 
-    // Database error mapping
+    // Mappage d'erreurs DB
     if (error.name === "RepositoryNotFoundError") {
       return res.status(500).json({
-        error: "DB configuration incorrect (Wallet entity missing)",
+        error: "Configuration DB incorrecte (entité Wallet manquante)",
         code: error.name,
       });
     }
     if (error.name === "QueryFailedError") {
       return res.status(500).json({
-        error: "SQL error creating wallet",
+        error: "Erreur SQL lors de la création du wallet",
         details: error.message,
         code: error.name,
       });
     }
 
-    // Generic fallback
+    // Fallback générique
     return res.status(500).json({
-      error: "Account creation error",
+      error: "Erreur lors de la création du compte",
       code: error.code || "UNKNOWN",
       message: error.message,
     });
