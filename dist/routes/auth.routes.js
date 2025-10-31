@@ -40,14 +40,16 @@ const express_1 = __importDefault(require("express"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const nodemailer_1 = __importDefault(require("nodemailer"));
+const mail_1 = __importDefault(require("@sendgrid/mail"));
 const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const data_source_1 = require("../config/data-source");
 const wallet_1 = require("../entities/wallet");
 dotenv_1.default.config();
 const AuthRouter = express_1.default.Router();
 const SECRET = "taxibe_secret_key_2025";
-// Initialisation Firebase Admin
+// ============================================================================
+// FIREBASE INITIALIZATION
+// ============================================================================
 const serviceAccount = {
     projectId: process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
@@ -58,29 +60,56 @@ if (!firebase_admin_1.default.apps.length) {
         credential: firebase_admin_1.default.credential.cert(serviceAccount),
     });
 }
-// Nodemailer config (ex: Gmail SMTP)
-const transporter = nodemailer_1.default.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+// ============================================================================
+// SENDGRID CONFIGURATION
+// ============================================================================
+mail_1.default.setApiKey(process.env.SENDGRID_API_KEY || "");
+if (!process.env.SENDGRID_API_KEY) {
+    console.error('❌ SENDGRID_API_KEY not configured!');
+}
+else {
+    console.log('✅ SendGrid configured successfully');
+}
+// ============================================================================
+// EMAIL SENDING WITH RETRY LOGIC
+// ============================================================================
+async function sendEmailWithRetry(to, subject, html, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await mail_1.default.send({
+                to,
+                from: process.env.SENDGRID_FROM_EMAIL || "andrea112samuel@gmail.com",
+                subject,
+                html,
+            });
+            console.log(' Email sent successfully via SendGrid');
+            return;
+        }
+        catch (error) {
+            console.error(` Attempt ${i + 1}/${retries} failed:`, error.message);
+            if (i < retries - 1) {
+                const delay = 1000 * Math.pow(2, i);
+                console.log(`⏳ Retrying in ${delay}ms...`);
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+            else {
+                throw new Error(`Email send failed after ${retries} attempts: ${error.message}`);
+            }
+        }
+    }
+}
 const pendingOtps = new Map();
 function generateOtp(len = 6) {
     return Array.from({ length: len }, () => Math.floor(Math.random() * 10)).join("");
 }
+// ============================================================================
+// SWAGGER DOCUMENTATION
+// ============================================================================
 /**
  * @swagger
  * tags:
  *   name: Auth
  *   description: Authentification utilisateurs via OTP email
- */
-/**
- * @swagger
- * tags:
- *   name: Auth
- *   description: Authentification avec confirmation email par code OTP
  */
 /**
  * @swagger
@@ -120,6 +149,8 @@ function generateOtp(len = 6) {
  *                   type: string
  *       400:
  *         description: Email ou rôle invalide / email déjà utilisé
+ *       500:
+ *         description: Erreur d'envoi d'email
  */
 AuthRouter.post('/send-confirmation', async (req, res) => {
     const { email, role } = req.body;
@@ -139,74 +170,40 @@ AuthRouter.post('/send-confirmation', async (req, res) => {
         code,
         role,
         expiresAt: Date.now() + 5 * 60 * 1000,
-        attempts: 0
+        attempts: 0,
     });
-    await transporter.sendMail({
-        from: `"Support Fandaniana" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Code de confirmation pour inscription",
-        html: `<p>Votre code de confirmation (valide 5 minutes) : <b>${code}</b></p>`,
-    });
-    res.json({ message: "Code envoyé, veuillez confirmer", step: "CONFIRM_EMAIL" });
+    try {
+        await sendEmailWithRetry(email, "Votre code de confirmation", `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+          <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0;">Fandaniana</h1>
+          </div>
+          <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333;">Code de confirmation</h2>
+            <p style="color: #666; font-size: 16px;">Votre code de confirmation (valide 5 minutes):</p>
+            <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+              <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
+            </div>
+            <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne. Notre équipe ne vous le demandera jamais.</p>
+          </div>
+        </div>
+      `);
+        res.json({
+            message: "Code envoyé, veuillez confirmer",
+            step: "CONFIRM_EMAIL",
+        });
+    }
+    catch (emailError) {
+        console.error("❌ Erreur d'envoi d'email:", emailError.message);
+        res.status(500).json({
+            error: "Erreur d'envoi d'email. Veuillez réessayer.",
+            details: emailError.message,
+        });
+    }
 });
-// /**
-//  * @swagger
-//  * /auth/confirm:
-//  *   post:
-//  *     summary: Confirme le code OTP et crée le compte utilisateur
-//  *     tags: [Auth]
-//  *     requestBody:
-//  *       required: true
-//  *       content:
-//  *         application/json:
-//  *           schema:
-//  *             type: object
-//  *             required:
-//  *               - email
-//  *               - code
-//  *             properties:
-//  *               email:
-//  *                 type: string
-//  *                 format: email
-//  *                 example: user@example.com
-//  *               code:
-//  *                 type: string
-//  *                 example: "123456"
-//  *     responses:
-//  *       200:
-//  *         description: Compte créé avec succès
-//  *         content:
-//  *           application/json:
-//  *             schema:
-//  *               type: object
-//  *               properties:
-//  *                 message:
-//  *                   type: string
-//  *                 uid:
-//  *                   type: string
-//  *       400:
-//  *         description: Code invalide, expiré ou aucun code en attente
-//  */
-// AuthRouter.post('/confirm', async (req: Request, res: Response) => {
-//   const { email, code } = req.body;
-//   const otpData = pendingOtps.get(email);
-//   if (!otpData) return res.status(400).json({ error: "Aucun code en attente pour cet email" });
-//   if (Date.now() > otpData.expiresAt) {
-//     pendingOtps.delete(email);
-//     return res.status(400).json({ error: "Code expiré" });
-//   }
-//   if (otpData.code !== code) {
-//     return res.status(400).json({ error: "Code incorrect" });
-//   }
-//   try {
-//     const userRecord = await admin.auth().createUser({ email });
-//     await admin.auth().setCustomUserClaims(userRecord.uid, { role: otpData.role });
-//     pendingOtps.delete(email);
-//     return res.json({ message: "Compte créé avec succès", uid: userRecord.uid });
-//   } catch (error) {
-//     return res.status(400).json({ error: "Erreur lors de la création du compte" });
-//   }
-// });
+// ============================================================================
+// LOGIN - SEND OTP
+// ============================================================================
 /**
  * @swagger
  * /auth/login:
@@ -228,44 +225,66 @@ AuthRouter.post('/send-confirmation', async (req, res) => {
  *     responses:
  *       200:
  *         description: Code envoyé
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 step:
- *                   type: string
- *                 uid:
- *                   type: string
  *       400:
  *         description: Erreur d'email
+ *       500:
+ *         description: Erreur d'envoi d'email
  */
 AuthRouter.post("/login", async (req, res) => {
     const { email } = req.body;
-    if (!email)
+    if (!email) {
         return res.status(400).json({ error: "Email manquant" });
+    }
     try {
         const user = await firebase_admin_1.default.auth().getUserByEmail(email);
         const code = generateOtp(6);
         pendingOtps.set(email, {
-            code, expiresAt: Date.now() + 5 * 60000, attempts: 0,
-            role: ""
+            code,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+            attempts: 0,
+            role: "",
         });
-        await transporter.sendMail({
-            from: `"Support Fandaniana" <${process.env.SMTP_USER}>`,
-            to: email,
-            subject: "Votre code de vérification",
-            html: `<p>Voici votre code de vérification (valide 5 minutes): <b>${code}</b></p>`,
-        });
-        return res.json({ message: "Code envoyé par email", step: "VERIFY_OTP", uid: user.uid });
+        try {
+            await sendEmailWithRetry(email, "Votre code de vérification Fandaniana", `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+            <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0;">Fandaniana</h1>
+            </div>
+            <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+              <h2 style="color: #333;">Votre code de vérification</h2>
+              <p style="color: #666; font-size: 16px;">Veuillez entrer ce code pour accéder à votre compte (valide 5 minutes):</p>
+              <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+                <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
+              </div>
+              <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne.</p>
+            </div>
+          </div>
+        `);
+            return res.json({
+                message: "Code envoyé par email",
+                step: "VERIFY_OTP",
+                uid: user.uid,
+            });
+        }
+        catch (emailError) {
+            console.error("❌ Erreur d'envoi d'email:", emailError.message);
+            return res.status(500).json({
+                error: "Erreur d'envoi d'email. Veuillez réessayer.",
+                code: emailError.code,
+            });
+        }
     }
     catch (error) {
-        console.error("Erreur login/OTP:", error);
-        return res.status(400).json({ error: "Utilisateur introuvable ou erreur d'envoi" });
+        console.error("❌ Erreur login:", error.message);
+        return res.status(400).json({
+            error: "Utilisateur introuvable ou erreur d'envoi",
+            code: error.code,
+        });
     }
 });
+// ============================================================================
+// VERIFY OTP
+// ============================================================================
 /**
  * @swagger
  * /auth/verify-otp:
@@ -288,15 +307,6 @@ AuthRouter.post("/login", async (req, res) => {
  *     responses:
  *       200:
  *         description: Connexion réussie (token)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 token:
- *                   type: string
- *                 role:
- *                   type: string
  *       400:
  *         description: Code invalide ou expiré
  *       429:
@@ -304,14 +314,18 @@ AuthRouter.post("/login", async (req, res) => {
  */
 AuthRouter.post("/verify-otp", async (req, res) => {
     const { email, code } = req.body;
-    if (!email || !code)
+    if (!email || !code) {
         return res.status(400).json({ error: "Email et code requis" });
+    }
     const record = pendingOtps.get(email);
-    if (!record)
+    if (!record) {
         return res.status(400).json({ error: "Aucun OTP en attente" });
+    }
     if (record.attempts >= 5) {
         pendingOtps.delete(email);
-        return res.status(429).json({ error: "Trop de tentatives, redemandez un code" });
+        return res.status(429).json({
+            error: "Trop de tentatives, redemandez un code",
+        });
     }
     if (Date.now() > record.expiresAt) {
         pendingOtps.delete(email);
@@ -325,13 +339,19 @@ AuthRouter.post("/verify-otp", async (req, res) => {
     try {
         const user = await firebase_admin_1.default.auth().getUserByEmail(email);
         const role = user.customClaims?.role || "user";
-        const token = jsonwebtoken_1.default.sign({ uid: user.uid, role }, SECRET, { expiresIn: "2h" });
+        const token = jsonwebtoken_1.default.sign({ uid: user.uid, role }, SECRET, {
+            expiresIn: "2h",
+        });
         return res.json({ token, role });
     }
-    catch {
+    catch (error) {
+        console.error("❌ Erreur verify OTP:", error.message);
         return res.status(400).json({ error: "Utilisateur introuvable" });
     }
 });
+// ============================================================================
+// RESEND OTP
+// ============================================================================
 /**
  * @swagger
  * /auth/resend-otp:
@@ -356,36 +376,65 @@ AuthRouter.post("/verify-otp", async (req, res) => {
  *         description: Utilisateur introuvable
  *       429:
  *         description: Rate limit atteint
+ *       500:
+ *         description: Erreur d'envoi d'email
  */
 const resendLimiter = (0, express_rate_limit_1.default)({
     windowMs: 5 * 60 * 1000,
     max: 3,
-    // Utilise ipKeyGenerator pour gérer les IPv6 correctement
     keyGenerator: (req) => req.body.email || (0, express_rate_limit_1.ipKeyGenerator)(req),
+    message: "Trop de tentatives, veuillez réessayer plus tard",
 });
 AuthRouter.post("/resend-otp", resendLimiter, async (req, res) => {
     const { email } = req.body;
-    if (!email)
+    if (!email) {
         return res.status(400).json({ error: "Email manquant" });
+    }
     try {
         await firebase_admin_1.default.auth().getUserByEmail(email);
         const code = generateOtp(6);
         pendingOtps.set(email, {
-            code, expiresAt: Date.now() + 5 * 60000, attempts: 0,
-            role: ""
+            code,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+            attempts: 0,
+            role: "",
         });
-        await transporter.sendMail({
-            from: `"Support Fandaniana" <${process.env.SMTP_USER}>`,
-            to: email,
-            subject: "Nouveau code de vérification",
-            html: `<p>Nouveau code (valide 5 minutes): <b>${code}</b></p>`,
-        });
-        return res.json({ message: "Nouveau code envoyé" });
+        try {
+            await sendEmailWithRetry(email, "Nouveau code de vérification", `
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+              <div style="background-color: #FCB53B; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0;">Fandaniana</h1>
+              </div>
+              <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+                <h2 style="color: #333;">Nouveau code de vérification</h2>
+                <p style="color: #666; font-size: 16px;">Voici votre nouveau code (valide 5 minutes):</p>
+                <div style="background-color: white; border: 2px solid #FCB53B; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+                  <h1 style="color: #FCB53B; letter-spacing: 5px; margin: 0; font-size: 36px;">${code}</h1>
+                </div>
+                <p style="color: #999; font-size: 12px;">⚠️ Ne partagez ce code avec personne.</p>
+              </div>
+            </div>
+          `);
+            return res.json({ message: "Nouveau code envoyé" });
+        }
+        catch (emailError) {
+            console.error("❌ Erreur d'envoi d'email:", emailError.message);
+            return res.status(500).json({
+                error: "Erreur d'envoi d'email. Veuillez réessayer.",
+            });
+        }
     }
-    catch {
-        return res.status(400).json({ error: "Utilisateur introuvable" });
+    catch (error) {
+        console.error("❌ Erreur resend OTP:", error.message);
+        return res.status(400).json({
+            error: "Utilisateur introuvable",
+            code: error.code,
+        });
     }
 });
+// ============================================================================
+// CONFIRM - CREATE ACCOUNT AND WALLET (IDEMPOTENT)
+// ============================================================================
 /**
  * @swagger
  * /auth/confirm:
@@ -410,14 +459,18 @@ AuthRouter.post("/resend-otp", resendLimiter, async (req, res) => {
  *     responses:
  *       200:
  *         description: Compte et wallet prêts à l'emploi
+ *       400:
+ *         description: Code invalide, expiré ou validation error
+ *       500:
+ *         description: Firebase ou database error
  */
-AuthRouter.post('/confirm', async (req, res) => {
+AuthRouter.post("/confirm", async (req, res) => {
     const { email, code } = req.body;
-    console.log('===========================================');
-    console.log('📥 CONFIRM - Début de la requête');
-    console.log('Email:', email);
-    console.log('Code reçu:', code);
-    console.log('===========================================');
+    console.log("===========================================");
+    console.log("📥 CONFIRM - Début de la requête");
+    console.log("Email:", email);
+    console.log("Code reçu:", code);
+    console.log("===========================================");
     // 0) Validation
     if (!email || !code) {
         return res.status(400).json({ error: "Email et code requis" });
@@ -433,18 +486,21 @@ AuthRouter.post('/confirm', async (req, res) => {
     if (otpData.code !== code) {
         return res.status(400).json({ error: "Code incorrect" });
     }
-    console.log('✅ OTP validé');
+    console.log("✅ OTP validé");
     try {
         // 1) Récupérer ou créer l'utilisateur Firebase (idempotent)
         let userRecord;
         try {
             userRecord = await firebase_admin_1.default.auth().getUserByEmail(email);
-            console.log('ℹ️ Utilisateur déjà existant:', userRecord.uid);
+            console.log("ℹ️ Utilisateur déjà existant:", userRecord.uid);
         }
         catch (e) {
-            if (e.code === 'auth/user-not-found') {
-                userRecord = await firebase_admin_1.default.auth().createUser({ email, emailVerified: false });
-                console.log('✅ Utilisateur créé:', userRecord.uid);
+            if (e.code === "auth/user-not-found") {
+                userRecord = await firebase_admin_1.default.auth().createUser({
+                    email,
+                    emailVerified: false,
+                });
+                console.log("✅ Utilisateur créé:", userRecord.uid);
             }
             else {
                 throw e;
@@ -452,83 +508,92 @@ AuthRouter.post('/confirm', async (req, res) => {
         }
         // 2) Définir/mettre à jour les custom claims (rôle)
         try {
-            await firebase_admin_1.default.auth().setCustomUserClaims(userRecord.uid, { role: otpData.role });
-            console.log('✅ Rôle défini/mis à jour:', otpData.role);
+            await firebase_admin_1.default.auth().setCustomUserClaims(userRecord.uid, {
+                role: otpData.role || "user",
+            });
+            console.log("✅ Rôle défini/mis à jour:", otpData.role || "user");
         }
         catch (roleError) {
-            console.error('❌ Erreur setCustomUserClaims:', roleError);
+            console.error("❌ Erreur setCustomUserClaims:", roleError);
             throw roleError;
         }
-        // 3) Vérifier l’état de la DB
+        // 3) Vérifier l'état de la DB
         if (!data_source_1.AppDataSource.isInitialized) {
-            console.log('⚠️ AppDataSource non initialisé, initialisation...');
+            console.log("⚠️ AppDataSource non initialisé, initialisation...");
             await data_source_1.AppDataSource.initialize();
-            console.log('✅ AppDataSource initialisé');
+            console.log("✅ AppDataSource initialisé");
         }
-        // 4) Créer le wallet s’il n’existe pas (idempotent)
+        // 4) Créer le wallet s'il n'existe pas (idempotent)
         const walletRepo = data_source_1.AppDataSource.getRepository(wallet_1.Wallet);
-        let wallet = await walletRepo.findOne({ where: { firebase_uid: userRecord.uid } });
+        let wallet = await walletRepo.findOne({
+            where: { firebase_uid: userRecord.uid },
+        });
         if (!wallet) {
             wallet = walletRepo.create({
                 firebase_uid: userRecord.uid,
                 email,
-                role: otpData.role,
-                nom: `Portefeuille de ${email.split('@')[0]}`,
-                solde_total: 0
+                role: otpData.role || "user",
+                nom: `Portefeuille de ${email.split("@")[0]}`,
+                solde_total: 0,
             });
             await walletRepo.save(wallet);
-            console.log('✅ Wallet créé:', wallet.id);
+            console.log("✅ Wallet créé:", wallet.id);
         }
         else {
-            console.log('ℹ️ Wallet déjà existant:', wallet.id);
+            console.log("ℹ️ Wallet déjà existant:", wallet.id);
         }
-        // 5) Nettoyer l’OTP en mémoire
+        // 5) Nettoyer l'OTP en mémoire
         pendingOtps.delete(email);
         return res.status(200).json({
             message: "Compte et portefeuille prêts",
             uid: userRecord.uid,
-            wallet_id: wallet.id
+            wallet_id: wallet.id,
         });
     }
     catch (error) {
-        console.error('❌ ERREUR confirm:', {
+        console.error("❌ ERREUR confirm:", {
             name: error?.name,
             code: error?.code,
-            message: error?.message
+            message: error?.message,
         });
-        // Mappage d’erreurs Firebase
-        if (error.code === 'auth/invalid-email') {
-            return res.status(400).json({ error: "Adresse email invalide", code: error.code });
+        // Mappage d'erreurs Firebase
+        if (error.code === "auth/invalid-email") {
+            return res.status(400).json({
+                error: "Adresse email invalide",
+                code: error.code,
+            });
         }
-        if (error.code === 'auth/insufficient-permission') {
+        if (error.code === "auth/insufficient-permission") {
             return res.status(500).json({
                 error: "Permissions Firebase insuffisantes",
-                code: error.code
+                code: error.code,
             });
         }
-        if (error.code === 'auth/email-already-exists') {
-            // Théoriquement évité par l’idempotence; conservé par sécurité
-            return res.status(400).json({ error: "Email déjà utilisé", code: error.code });
+        if (error.code === "auth/email-already-exists") {
+            return res.status(400).json({
+                error: "Email déjà utilisé",
+                code: error.code,
+            });
         }
-        // Mappage d’erreurs DB
-        if (error.name === 'RepositoryNotFoundError') {
+        // Mappage d'erreurs DB
+        if (error.name === "RepositoryNotFoundError") {
             return res.status(500).json({
                 error: "Configuration DB incorrecte (entité Wallet manquante)",
-                code: error.name
+                code: error.name,
             });
         }
-        if (error.name === 'QueryFailedError') {
+        if (error.name === "QueryFailedError") {
             return res.status(500).json({
                 error: "Erreur SQL lors de la création du wallet",
                 details: error.message,
-                code: error.name
+                code: error.name,
             });
         }
         // Fallback générique
         return res.status(500).json({
             error: "Erreur lors de la création du compte",
-            code: error.code || 'UNKNOWN',
-            message: error.message
+            code: error.code || "UNKNOWN",
+            message: error.message,
         });
     }
 });
