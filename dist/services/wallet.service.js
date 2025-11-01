@@ -27,6 +27,12 @@ class WalletService {
         wallet.solde_total = Number(wallet.solde_total) + Number(montant);
         return await this.walletRepository.save(wallet);
     }
+    /**
+     * Retourne le solde actuel, le total cumulé des dépenses et le nombre de transactions
+     * @param {string} firebaseUid - L'UID Firebase de l'utilisateur
+     * @returns {Promise<{ solde: number, total_depenses: number, nombre_transactions: number, email: string }>}
+     * @throws {Error} - Si le portefeuille est introuvable
+     */
     async getBalance(firebaseUid) {
         const wallet = await this.walletRepository.findOne({
             where: { firebase_uid: firebaseUid },
@@ -43,6 +49,13 @@ class WalletService {
             email: wallet.email
         };
     }
+    /**
+     * Récupère l'historique des transactions du portefeuille
+     * @param {string} firebaseUid - L'UID Firebase de l'utilisateur
+     * @param {number} [limit=50] - Nombre maximum de transactions à retourner
+     * @returns {Promise<Transaction[]>} - Liste des transactions triées par date décroissante
+     * @throws {Error} - Si le portefeuille est introuvable
+     */
     async getTransactionHistory(firebaseUid, limit = 50) {
         const wallet = await this.walletRepository.findOne({
             where: { firebase_uid: firebaseUid }
@@ -57,6 +70,13 @@ class WalletService {
             order: { date_transaction: 'DESC' },
             take: limit
         });
+    }
+    async deleteBalance(firebaseUid) {
+        const supBalance = await this.walletRepository.delete({ firebase_uid: firebaseUid });
+        if (solde === 0) {
+            throw new Error('votre solde est vide');
+        }
+        return supBalance;
     }
 }
 exports.WalletService = WalletService;

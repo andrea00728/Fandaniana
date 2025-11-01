@@ -238,5 +238,53 @@ WalletRouter.get('/balance', authMiddleware_1.authenticate, walletController.get
  *         description: Token manquant ou invalide
  */
 WalletRouter.get('/transactions', authMiddleware_1.authenticate, walletController.getTransactionHistory);
+/**
+ * @swagger
+ * /wallet/delete-balance:
+ *   delete:
+ *     summary: Réinitialiser le solde du portefeuille à zéro
+ *     description: Réinitialise le solde à zéro. Le portefeuille persiste avec un solde vide
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Solde réinitialisé avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "votre portefeuille est vide"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     nouveau_solde:
+ *                       type: number
+ *                       example: 0
+ *       400:
+ *         description: Le solde est déjà vide ou portefeuille introuvable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "votre portefeuille est deja vide"
+ *       401:
+ *         description: Token manquant ou invalide
+ *       500:
+ *         description: Erreur serveur
+ */
+WalletRouter.delete('/delete-balance', authMiddleware_1.authenticate, walletController.deleteBalance);
 exports.default = WalletRouter;
 //# sourceMappingURL=wallet.routes.js.map
