@@ -130,7 +130,7 @@ export class TransactionService {
       doc
         .font('Helvetica-Bold')
         .fontSize(24)
-        .text('HealthMate', { align: 'center' })
+        .text('Fandaniana', { align: 'center' })
         .fontSize(14)
         .text('Historique des Transactions', { align: 'center' })
         .moveDown(0.5);
@@ -243,7 +243,7 @@ export class TransactionService {
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#999999')
-        .text('Document généré automatiquement par HealthMate', { align: 'center' })
+        .text('Document généré automatiquement par Fandaniana', { align: 'center' })
         .text(`${new Date().toLocaleString('fr-FR')}`, { align: 'center' });
 
       // Finaliser le PDF
