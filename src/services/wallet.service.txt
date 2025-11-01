@@ -92,15 +92,37 @@ export class WalletService {
     });
   }
 
+  /**
+   * Réinitialiser le solde du portefeuille
+   * @param {string} firebaseUid - L'UID Firebase de l'utilisateur
+   * @returns {Promise<{solde: number, message: string}>} - Le solde actuel et un message de confirmation
+   * @throws {Error} - Si le portefeuille est introuvable ou déjà vide
+   */
+// async deleteBalance(firebaseUid: string): Promise<{
+//   solde: number;
+//   message: string;
+// }> {
+//   const wallet = await this.walletRepository.findOne({
+//     where: { firebase_uid: firebaseUid }
+//   });
 
-  async deleteBalance(firebaseUid: string):  Promise<{ 
-    solde: number; 
-  }> {
-    
-   const supBalance= await this.walletRepository.delete({ firebase_uid: firebaseUid });
-   if(solde===0){
-    throw new Error('votre solde est vide');
-   }
-   return supBalance;
-  }
+//   if (!wallet) {
+//     throw new Error('Portefeuille introuvable');
+//   }
+
+//   if (wallet.solde_total === 0) {
+//     throw new Error('votre portefeuille est deja vide');
+//   }
+
+//   wallet.solde_total = 0;
+//   const updateSold = await this.walletRepository.save(wallet);
+
+//   return {
+//     solde: updateSold.solde_total,
+//     message: "votre portefeuille est vide"
+//   };
+// }
+
+//**
+//  */
 }
