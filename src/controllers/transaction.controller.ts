@@ -49,4 +49,17 @@ export class TransactionController {
       });
     }
   };
+
+   exportHistoriquePdf = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const firebaseUid = req.user!.uid;
+      await this.transactionService.ImporteHistoriquePdf(firebaseUid, res);
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  };
+  
 }

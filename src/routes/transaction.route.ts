@@ -155,4 +155,29 @@ TransactionRoute.post('/', authenticate, transactionController.createTransaction
  */
 TransactionRoute.delete('/:id', authenticate, transactionController.deleteTransaction);
 
+/**
+ * @swagger
+ * /transactions/export-pdf:
+ *   get:
+ *     summary: Exporter l'historique des transactions en PDF
+ *     description: Génère et télécharge un PDF contenant tout l'historique des transactions
+ *     tags: [Transactions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: PDF généré avec succès
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Erreur lors de la génération du PDF
+ *       401:
+ *         description: Token manquant ou invalide
+ */
+TransactionRoute.get('/export-pdf', authenticate, transactionController.exportHistoriquePdf);
+
+
 export default TransactionRoute;
