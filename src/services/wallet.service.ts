@@ -98,30 +98,30 @@ export class WalletService {
    * @returns {Promise<{solde: number, message: string}>} - Le solde actuel et un message de confirmation
    * @throws {Error} - Si le portefeuille est introuvable ou déjà vide
    */
-// async deleteBalance(firebaseUid: string): Promise<{
-//   solde: number;
-//   message: string;
-// }> {
-//   const wallet = await this.walletRepository.findOne({
-//     where: { firebase_uid: firebaseUid }
-//   });
+async deleteBalance(firebaseUid: string): Promise<{
+  solde: number;
+  message: string;
+}> {
+  const wallet = await this.walletRepository.findOne({
+    where: { firebase_uid: firebaseUid }
+  });
 
-//   if (!wallet) {
-//     throw new Error('Portefeuille introuvable');
-//   }
+  if (!wallet) {
+    throw new Error('Portefeuille introuvable');
+  }
 
-//   if (wallet.solde_total === 0) {
-//     throw new Error('votre portefeuille est deja vide');
-//   }
+  if (wallet.solde_total === 0) {
+    throw new Error('votre portefeuille est deja vide');
+  }
 
-//   wallet.solde_total = 0;
-//   const updateSold = await this.walletRepository.save(wallet);
+  wallet.solde_total = 0;
+  const updateSold = await this.walletRepository.save(wallet);
 
-//   return {
-//     solde: updateSold.solde_total,
-//     message: "votre portefeuille est vide"
-//   };
-// }
+  return {
+    solde: updateSold.solde_total,
+    message: "votre portefeuille est vide"
+  };
+}
 
 //**
 //  */

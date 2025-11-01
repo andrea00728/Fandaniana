@@ -97,24 +97,24 @@ export class WalletController {
 
 
 
-//  deleteBalance = async (req: AuthRequest, res: Response): Promise<void> => {
-//   try {
-//     const firebaseUid = req.user!.uid;
-//     const result = await this.walletService.deleteBalance(firebaseUid);
+ deleteBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const firebaseUid = req.user!.uid;
+    const result = await this.walletService.deleteBalance(firebaseUid);
 
-//     res.status(200).json({
-//       success: true,
-//       message: result.message,
-//       data: {
-//         nouv_solde: result.solde
-//       }
-//     });
-//   } catch (error: any) {
-//     res.status(400).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// };
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: {
+        nouv_solde: result.solde
+      }
+    });
+  } catch (error: any) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 
 }
