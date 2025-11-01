@@ -88,4 +88,5 @@ export class WalletController {
       });
     }
   };
+
 }
